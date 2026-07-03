@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: yuya-cpu/security-checks
+          path: security-checks
+
+      - name: Wire security-checks dependency
+        run: go mod edit -replace=github.com/yuya-cpu/security-checks=./security-checks
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests with coverage
+        run: |
+          mkdir -p coverage
+          go test ./... -coverprofile=coverage/coverage.out -covermode=atomic
+          go tool cover -func=coverage/coverage.out
+
+      - name: Build
+        run: go build -o bin/web-security-proxy ./cmd/server
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: yuya-cpu/security-checks
+          path: security-checks
+
+      - name: Wire security-checks dependency
+        run: go mod edit -replace=github.com/yuya-cpu/security-checks=./security-checks
+
+      - name: Build Docker image
+        run: docker compose build
