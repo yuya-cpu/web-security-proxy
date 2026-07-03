@@ -1,0 +1,196 @@
+{{define "index.html"}}
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Security Proxy</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header class="app-header">
+        <h1>Web Security Proxy</h1>
+        <p class="subtitle">Phase 4 - Traffic Logger + Repeater + Security Scanner</p>
+    </header>
+
+    <main class="layout">
+        <section class="panel list-panel">
+            <h2>通信一覧</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Method</th>
+                        <th>URL</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Transactions}}
+                    <tr class="{{if and $.Selected (eq $.Selected.ID .ID)}}selected{{end}}">
+                        <td><a href="/transactions/{{.ID}}">{{.CreatedAt.Local.Format "15:04:05"}}</a></td>
+                        <td><a href="/transactions/{{.ID}}">{{.Method}}</a></td>
+                        <td class="url"><a href="/transactions/{{.ID}}">{{.URL}}</a></td>
+                        <td><a href="/transactions/{{.ID}}">{{.StatusCode}}</a></td>
+                    </tr>
+                    {{else}}
+                    <tr>
+                        <td colspan="4" class="empty">通信履歴はまだありません。ブラウザのプロキシ設定をこのサーバーに向けてください。</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </section>
+
+        <section class="panel detail-panel">
+            <h2>詳細</h2>
+            {{if .Selected}}
+            <div class="tabs">
+                <button type="button" class="tab active" data-tab="view">履歴</button>
+                <button type="button" class="tab" data-tab="security">Security</button>
+                <button type="button" class="tab" data-tab="scanner">Scanner</button>
+                <button type="button" class="tab" data-tab="repeater">Repeater</button>
+            </div>
+
+            <div id="tab-view" class="tab-content active">
+                <div class="detail-block">
+                    <h3>Request</h3>
+                    <dl>
+                        <dt>Method</dt><dd>{{.Selected.Method}}</dd>
+                        <dt>URL</dt><dd class="mono">{{.Selected.URL}}</dd>
+                        <dt>Header</dt><dd><pre>{{.Selected.RequestHeaders}}</pre></dd>
+                        <dt>Body</dt><dd><pre>{{.Selected.RequestBody}}</pre></dd>
+                    </dl>
+                </div>
+                <div class="detail-block">
+                    <h3>Response</h3>
+                    <dl>
+                        <dt>Status</dt><dd>{{.Selected.StatusCode}}</dd>
+                        <dt>Header</dt><dd><pre>{{.Selected.ResponseHeaders}}</pre></dd>
+                        <dt>Body</dt><dd><pre>{{.Selected.ResponseBody}}</pre></dd>
+                    </dl>
+                </div>
+            </div>
+
+            <div id="tab-security" class="tab-content">
+                <p class="hint">共通 security-checks パッケージでレスポンスを診断します。go-security-scanner と同じ判定ロジックを使用しています。</p>
+
+                <div class="detail-block">
+                    <h3>Overall Risk</h3>
+                    <p><span class="badge risk-{{.Diagnostics.OverallRisk}}">{{.Diagnostics.OverallRisk}}</span></p>
+                </div>
+
+                <div class="detail-block">
+                    <h3>Server</h3>
+                    <p class="mono server-value">{{.Diagnostics.Server}}</p>
+                </div>
+
+                <div class="detail-block">
+                    <h3>Findings</h3>
+                    <ul class="finding-list">
+                        {{range .Diagnostics.Findings}}
+                        <li class="finding">
+                            <span class="badge risk-{{.RiskLevel}}">{{.RiskLevel}}</span>
+                            <strong>{{.Title}}</strong>
+                            {{if .Description}}<span>{{.Description}}</span>{{end}}
+                        </li>
+                        {{else}}
+                        <li class="empty">診断結果はありません。</li>
+                        {{end}}
+                    </ul>
+                </div>
+
+                <div class="detail-block">
+                    <h3>Cookies</h3>
+                    {{if .Diagnostics.Cookies}}
+                    <table class="cookie-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>HttpOnly</th>
+                                <th>Secure</th>
+                                <th>SameSite</th>
+                                <th>Warnings</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{range .Diagnostics.Cookies}}
+                            <tr>
+                                <td class="mono">{{.Name}}</td>
+                                <td>{{if .HttpOnly}}✓{{else}}—{{end}}</td>
+                                <td>{{if .Secure}}✓{{else}}—{{end}}</td>
+                                <td>{{if .SameSite}}{{.SameSite}}{{else}}—{{end}}</td>
+                                <td>
+                                    {{if .Warnings}}
+                                    <ul class="inline-warnings">
+                                        {{range .Warnings}}
+                                        <li><span class="badge risk-{{.RiskLevel}}">{{.RiskLevel}}</span> {{.Title}}</li>
+                                        {{end}}
+                                    </ul>
+                                    {{else}}
+                                    <span class="ok-text">OK</span>
+                                    {{end}}
+                                </td>
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                    {{else}}
+                    <p class="empty">Set-Cookie ヘッダーはありません。</p>
+                    {{end}}
+                </div>
+            </div>
+
+            <div id="tab-scanner" class="tab-content">
+                <p class="hint">SQL Injection / XSS / robots.txt / sitemap.xml の能動スキャンを実行します。対象 URL に追加リクエストを送信します。</p>
+                <div class="form-actions">
+                    <button type="button" id="active-scan-run" class="btn-primary" data-transaction-id="{{.Selected.ID}}">能動スキャンを実行</button>
+                    <span id="active-scan-status" class="status-msg" aria-live="polite"></span>
+                </div>
+                <div id="active-scan-results" class="scan-results empty">スキャン結果はまだありません。</div>
+            </div>
+
+            <div id="tab-repeater" class="tab-content">
+                <p class="hint">選択したリクエストを編集して再送信できます。結果は通信履歴に追加されます。</p>
+                <form id="repeater-form" class="repeater-form">
+                    <label>
+                        Method
+                        <select id="repeater-method" name="method">
+                            <option value="GET" {{if eq .Selected.Method "GET"}}selected{{end}}>GET</option>
+                            <option value="POST" {{if eq .Selected.Method "POST"}}selected{{end}}>POST</option>
+                            <option value="PUT" {{if eq .Selected.Method "PUT"}}selected{{end}}>PUT</option>
+                            <option value="PATCH" {{if eq .Selected.Method "PATCH"}}selected{{end}}>PATCH</option>
+                            <option value="DELETE" {{if eq .Selected.Method "DELETE"}}selected{{end}}>DELETE</option>
+                            <option value="HEAD" {{if eq .Selected.Method "HEAD"}}selected{{end}}>HEAD</option>
+                            <option value="OPTIONS" {{if eq .Selected.Method "OPTIONS"}}selected{{end}}>OPTIONS</option>
+                        </select>
+                    </label>
+                    <label>
+                        URL
+                        <input type="text" id="repeater-url" name="url" value="{{.Selected.URL}}" class="mono">
+                    </label>
+                    <label>
+                        Headers（1行に1つ、<code>Key: Value</code> 形式）
+                        <textarea id="repeater-headers" name="headers" rows="8" class="mono">{{.Selected.RequestHeaders}}</textarea>
+                    </label>
+                    <label>
+                        Body
+                        <textarea id="repeater-body" name="body" rows="8" class="mono">{{.Selected.RequestBody}}</textarea>
+                    </label>
+                    <div class="form-actions">
+                        <button type="submit" id="repeater-send" class="btn-primary">Send</button>
+                        <span id="repeater-status" class="status-msg" aria-live="polite"></span>
+                    </div>
+                </form>
+            </div>
+            {{else}}
+            <p class="empty">左の一覧から通信を選択してください。</p>
+            {{end}}
+        </section>
+    </main>
+
+    <script src="/static/js/repeater.js"></script>
+    <script src="/static/js/scanner.js"></script>
+</body>
+</html>
+{{end}}
